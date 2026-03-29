@@ -152,6 +152,14 @@ type SimpleXConfig struct {
 	TextChunkLimit int                 `json:"text_chunk_limit,omitempty"` // max chars per message (default 4000)
 	BlockReply     *bool               `json:"block_reply,omitempty"`      // override gateway block_reply (nil = inherit)
 	FilesFolder    string              `json:"files_folder,omitempty"`     // where SimpleX stores received files (default ~/.simplex/simplex_v1_files)
+
+	// STT (Speech-to-Text) configuration for voice message transcription.
+	STTProxyURL       string `json:"stt_proxy_url,omitempty"`       // base URL of STT proxy (e.g. "http://127.0.0.1:8911")
+	STTAPIKey         string `json:"stt_api_key,omitempty"`         // optional Bearer token for STT proxy
+	STTTimeoutSeconds int    `json:"stt_timeout_seconds,omitempty"` // STT request timeout (default 30)
+
+	// Voice agent routing: if set, voice/audio messages are routed to this agent ID.
+	VoiceAgentID string `json:"voice_agent_id,omitempty"`
 }
 
 type ZaloConfig struct {

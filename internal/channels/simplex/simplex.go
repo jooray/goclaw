@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,8 +20,21 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/media"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
+
+const (
+	// pendingFileTimeout is how long to wait for a file download to complete.
+	pendingFileTimeout = 90 * time.Second
+)
+
+// pendingFile tracks a file download that's in progress.
+type pendingFile struct {
+	item    simplexChatItem // the original chat item
+	timer   *time.Timer     // timeout timer
+	created time.Time
+}
 
 // Channel connects to a SimpleX CLI instance via WebSocket.
 type Channel struct {
@@ -32,6 +47,10 @@ type Channel struct {
 	cancel        context.CancelFunc
 	allowedGroups map[string]bool // set of allowed group IDs (empty = all allowed)
 	chunkLimit    int             // max chars per outbound message
+
+	// pendingFiles tracks file downloads keyed by fileId string.
+	pendingMu    sync.Mutex
+	pendingFiles map[string]*pendingFile
 }
 
 // New creates a new SimpleX channel from config.
@@ -58,6 +77,7 @@ func New(cfg config.SimpleXConfig, msgBus *bus.MessageBus) (*Channel, error) {
 		config:        cfg,
 		allowedGroups: allowedGroups,
 		chunkLimit:    chunkLimit,
+		pendingFiles:  make(map[string]*pendingFile),
 	}, nil
 }
 
@@ -98,22 +118,135 @@ func (c *Channel) Stop(_ context.Context) error {
 	c.connected = false
 	c.SetRunning(false)
 
+	// Cancel all pending file timers.
+	c.pendingMu.Lock()
+	for k, pf := range c.pendingFiles {
+		pf.timer.Stop()
+		delete(c.pendingFiles, k)
+	}
+	c.pendingMu.Unlock()
+
 	return nil
 }
 
 // Send delivers an outbound message to a SimpleX group.
+// Handles voice messages when audio_as_voice metadata is set.
 func (c *Channel) Send(_ context.Context, msg bus.OutboundMessage) error {
-	if msg.Content == "" {
+	// Check for voice/audio media with audio_as_voice flag.
+	if msg.Metadata != nil && msg.Metadata["audio_as_voice"] == "true" && len(msg.Media) > 0 {
+		for _, att := range msg.Media {
+			if strings.HasPrefix(att.ContentType, "audio/") || strings.HasSuffix(att.URL, ".wav") ||
+				strings.HasSuffix(att.URL, ".ogg") || strings.HasSuffix(att.URL, ".m4a") ||
+				strings.HasSuffix(att.URL, ".mp3") {
+				if err := c.sendVoice(msg.ChatID, att.URL, msg.Content); err != nil {
+					slog.Warn("simplex: voice send failed, falling back to text", "error", err)
+				} else {
+					// Voice sent successfully; send any remaining text.
+					if msg.Content != "" {
+						return c.sendTextChunked(msg.ChatID, msg.Content)
+					}
+					return nil
+				}
+			}
+		}
+	}
+
+	// Regular text send (or fallback from voice).
+	if msg.Content == "" && len(msg.Media) == 0 {
 		return nil
 	}
 
-	chunks := c.splitMessage(msg.Content)
+	// Send any non-voice media as files.
+	for _, att := range msg.Media {
+		if err := c.sendFile(msg.ChatID, att.URL); err != nil {
+			slog.Warn("simplex: file send failed", "path", att.URL, "error", err)
+		}
+	}
+
+	return c.sendTextChunked(msg.ChatID, msg.Content)
+}
+
+// sendTextChunked sends text, splitting into chunks if needed.
+func (c *Channel) sendTextChunked(chatID, text string) error {
+	if text == "" {
+		return nil
+	}
+	chunks := c.splitMessage(text)
 	for _, chunk := range chunks {
-		if err := c.sendText(msg.ChatID, chunk); err != nil {
+		if err := c.sendText(chatID, chunk); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// sendVoice sends a voice note to a SimpleX group.
+// If the file is WAV, it converts to m4a first (SimpleX expects m4a/ogg for voice bubbles).
+func (c *Channel) sendVoice(chatID, audioPath, caption string) error {
+	finalPath := audioPath
+
+	// Convert WAV to m4a for SimpleX voice bubble compatibility.
+	if strings.HasSuffix(strings.ToLower(audioPath), ".wav") {
+		m4aPath := strings.TrimSuffix(audioPath, filepath.Ext(audioPath)) + ".m4a"
+		cmd := exec.CommandContext(c.ctx, "ffmpeg", "-y", "-i", audioPath,
+			"-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", m4aPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			slog.Warn("simplex: ffmpeg WAV->m4a conversion failed",
+				"error", err, "output", string(out))
+			return fmt.Errorf("ffmpeg WAV->m4a: %w", err)
+		}
+		finalPath = m4aPath
+		slog.Debug("simplex: converted WAV to m4a", "src", audioPath, "dst", m4aPath)
+	}
+
+	composed := []map[string]any{
+		{
+			"fileSource": map[string]string{
+				"filePath": finalPath,
+			},
+			"msgContent": map[string]any{
+				"type":     "voice",
+				"text":     caption,
+				"duration": 0,
+			},
+		},
+	}
+	jsonBody, err := json.Marshal(composed)
+	if err != nil {
+		return fmt.Errorf("marshal simplex voice message: %w", err)
+	}
+
+	cmd := fmt.Sprintf("/_send #%s json %s", chatID, string(jsonBody))
+	_, err = c.sendCommand(cmd)
+	if err != nil {
+		return fmt.Errorf("send simplex voice: %w", err)
+	}
+
+	slog.Info("simplex: voice note sent", "chat_id", chatID, "path", finalPath)
+	return nil
+}
+
+// sendFile sends a file attachment to a SimpleX group.
+func (c *Channel) sendFile(chatID, filePath string) error {
+	composed := []map[string]any{
+		{
+			"fileSource": map[string]string{
+				"filePath": filePath,
+			},
+			"msgContent": map[string]string{
+				"type": "file",
+				"text": "",
+			},
+		},
+	}
+	jsonBody, err := json.Marshal(composed)
+	if err != nil {
+		return fmt.Errorf("marshal simplex file message: %w", err)
+	}
+
+	cmd := fmt.Sprintf("/_send #%s json %s", chatID, string(jsonBody))
+	_, err = c.sendCommand(cmd)
+	return err
 }
 
 // sendText sends a single text message to a SimpleX group via the CLI protocol.
@@ -275,6 +408,9 @@ type wsMessage struct {
 type wsResp struct {
 	Type      string          `json:"type"`
 	ChatItems json.RawMessage `json:"chatItems,omitempty"`
+	// For rcvFileDescrReady / rcvFileComplete events
+	ChatItem        json.RawMessage `json:"chatItem,omitempty"`
+	RcvFileTransfer json.RawMessage `json:"rcvFileTransfer,omitempty"`
 }
 
 // simplexChatItem represents a single chat item from a newChatItems event.
@@ -329,8 +465,9 @@ type chatItemContent struct {
 }
 
 type msgContent struct {
-	Type string `json:"type"` // "text", "voice", "image", "video", "file", etc.
-	Text string `json:"text"`
+	Type     string `json:"type"` // "text", "voice", "image", "video", "file", etc.
+	Text     string `json:"text"`
+	Duration int    `json:"duration,omitempty"` // for voice messages
 }
 
 type chatItemFile struct {
@@ -342,6 +479,11 @@ type chatItemFile struct {
 
 type chatFileSource struct {
 	FilePath string `json:"filePath"`
+}
+
+// rcvFileTransferInfo is used to extract fileId from rcvFileDescrReady events.
+type rcvFileTransferInfo struct {
+	FileID json.Number `json:"fileId"`
 }
 
 // handleRawMessage parses the top-level WebSocket frame and dispatches events.
@@ -367,6 +509,10 @@ func (c *Channel) handleRawMessage(raw []byte) {
 	switch resp.Type {
 	case "newChatItems":
 		c.handleNewChatItems(resp.ChatItems)
+	case "rcvFileDescrReady":
+		c.handleRcvFileDescrReady(resp.RcvFileTransfer)
+	case "rcvFileComplete":
+		c.handleRcvFileComplete(resp.ChatItem)
 	default:
 		// Ignore other event types (chatItemStatusUpdated, contactConnected, etc.)
 	}
@@ -424,13 +570,49 @@ func (c *Channel) handleChatItem(item simplexChatItem) {
 		return
 	}
 
-	// Extract message text.
+	// Determine content type.
+	msgType := ""
+	if item.ChatItem.Content.MsgContent != nil {
+		msgType = item.ChatItem.Content.MsgContent.Type
+	}
+
+	// If this message has a file attachment, check if we need to wait for download.
+	if item.ChatItem.File != nil && (msgType == "voice" || msgType == "audio" || msgType == "image" || msgType == "file" || msgType == "video") {
+		fileID := item.ChatItem.File.FileID.String()
+
+		// Request file download.
+		if _, err := c.sendCommand(fmt.Sprintf("/freceive %s", fileID)); err != nil {
+			slog.Warn("simplex: freceive failed", "file_id", fileID, "error", err)
+			// Fall through to handle as text-only message.
+		} else {
+			slog.Debug("simplex: requested file download",
+				"file_id", fileID,
+				"msg_type", msgType,
+				"file_name", item.ChatItem.File.FileName,
+			)
+
+			// Store as pending — will be finalized on rcvFileComplete.
+			c.pendingMu.Lock()
+			timer := time.AfterFunc(pendingFileTimeout, func() {
+				c.handlePendingTimeout(fileID)
+			})
+			c.pendingFiles[fileID] = &pendingFile{
+				item:    item,
+				timer:   timer,
+				created: time.Now(),
+			}
+			c.pendingMu.Unlock()
+			return // Don't process yet — wait for file download.
+		}
+	}
+
+	// Process as a text message (or text-with-no-file).
 	text := ""
 	if item.ChatItem.Content.MsgContent != nil {
 		text = item.ChatItem.Content.MsgContent.Text
 	}
 	if text == "" {
-		// Skip empty text messages (voice/media without text handled later).
+		// Skip empty text messages with no file attachment.
 		return
 	}
 
@@ -447,6 +629,215 @@ func (c *Channel) handleChatItem(item simplexChatItem) {
 	)
 
 	c.HandleMessage(senderID, groupID, text, nil, metadata, "group")
+}
+
+// handleRcvFileDescrReady handles early file descriptor notifications.
+// This is sent before newChatItems for some file types. We auto-accept the download.
+func (c *Channel) handleRcvFileDescrReady(raw json.RawMessage) {
+	if raw == nil {
+		return
+	}
+
+	var info rcvFileTransferInfo
+	if err := json.Unmarshal(raw, &info); err != nil {
+		slog.Debug("simplex: cannot parse rcvFileDescrReady", "error", err)
+		return
+	}
+
+	fileID := info.FileID.String()
+	if fileID == "" || fileID == "0" {
+		return
+	}
+
+	// Check if we already requested this download (from handleChatItem).
+	c.pendingMu.Lock()
+	_, exists := c.pendingFiles[fileID]
+	c.pendingMu.Unlock()
+
+	if exists {
+		// Already tracking this file, skip duplicate freceive.
+		return
+	}
+
+	// Auto-accept the file download. It may arrive before newChatItems.
+	if _, err := c.sendCommand(fmt.Sprintf("/freceive %s", fileID)); err != nil {
+		slog.Warn("simplex: freceive (early) failed", "file_id", fileID, "error", err)
+	} else {
+		slog.Debug("simplex: early freceive sent", "file_id", fileID)
+	}
+}
+
+// handleRcvFileComplete handles the file download completion event.
+func (c *Channel) handleRcvFileComplete(raw json.RawMessage) {
+	if raw == nil {
+		return
+	}
+
+	// Parse the chat item from the rcvFileComplete event.
+	// Structure: { chatItem: { file: { fileId, fileSource: { filePath } } } }
+	var wrapper struct {
+		ChatItem struct {
+			File *chatItemFile `json:"file"`
+		} `json:"chatItem"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		slog.Debug("simplex: cannot parse rcvFileComplete", "error", err)
+		return
+	}
+
+	if wrapper.ChatItem.File == nil {
+		return
+	}
+
+	fileID := wrapper.ChatItem.File.FileID.String()
+	filePath := ""
+	if wrapper.ChatItem.File.FileSource != nil {
+		filePath = strings.TrimSpace(wrapper.ChatItem.File.FileSource.FilePath)
+	}
+
+	slog.Debug("simplex: file download complete", "file_id", fileID, "path", filePath)
+
+	// Look up the pending file.
+	c.pendingMu.Lock()
+	pf, exists := c.pendingFiles[fileID]
+	if exists {
+		pf.timer.Stop()
+		delete(c.pendingFiles, fileID)
+	}
+	c.pendingMu.Unlock()
+
+	if !exists {
+		slog.Debug("simplex: rcvFileComplete for unknown file", "file_id", fileID)
+		return
+	}
+
+	// Finalize the pending message with the downloaded file.
+	c.finalizePendingFile(pf, filePath)
+}
+
+// handlePendingTimeout fires when a file download doesn't complete in time.
+// Delivers the message without the media attachment.
+func (c *Channel) handlePendingTimeout(fileID string) {
+	c.pendingMu.Lock()
+	pf, exists := c.pendingFiles[fileID]
+	if exists {
+		delete(c.pendingFiles, fileID)
+	}
+	c.pendingMu.Unlock()
+
+	if !exists {
+		return
+	}
+
+	slog.Warn("simplex: file download timed out, delivering without media", "file_id", fileID)
+	c.finalizePendingFile(pf, "") // empty path = no media
+}
+
+// finalizePendingFile completes processing of a chat item whose file download is done.
+func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
+	item := pf.item
+
+	senderID, senderName := c.extractSender(item)
+	if senderID == "" {
+		return
+	}
+
+	groupID := item.ChatInfo.GroupInfo.GroupID.String()
+	msgType := ""
+	if item.ChatItem.Content.MsgContent != nil {
+		msgType = item.ChatItem.Content.MsgContent.Type
+	}
+
+	// Build content with media tags.
+	text := ""
+	if item.ChatItem.Content.MsgContent != nil {
+		text = item.ChatItem.Content.MsgContent.Text
+	}
+
+	var mediaPaths []string
+
+	if filePath != "" {
+		switch msgType {
+		case "voice", "audio":
+			// Transcribe via STT if configured.
+			transcript := ""
+			if c.config.STTProxyURL != "" {
+				var err error
+				transcript, err = media.TranscribeAudio(c.ctx, media.STTConfig{
+					ProxyURL:       c.config.STTProxyURL,
+					APIKey:         c.config.STTAPIKey,
+					TimeoutSeconds: c.config.STTTimeoutSeconds,
+				}, filePath)
+				if err != nil {
+					slog.Warn("simplex: STT transcription failed", "error", err, "path", filePath)
+				} else if transcript != "" {
+					slog.Info("simplex: voice transcribed",
+						"length", len(transcript),
+						"preview", truncatePreview(transcript, 80),
+					)
+				}
+			}
+
+			// Build media tag.
+			mi := media.MediaInfo{
+				Type:       msgType,
+				FilePath:   filePath,
+				FileName:   item.ChatItem.File.FileName,
+				FileSize:   item.ChatItem.File.FileSize,
+				Transcript: transcript,
+			}
+			mediaTag := media.BuildMediaTags([]media.MediaInfo{mi})
+
+			if text != "" {
+				text = mediaTag + "\n\n" + text
+			} else {
+				text = mediaTag
+			}
+
+			mediaPaths = append(mediaPaths, filePath)
+
+		case "image":
+			mi := media.MediaInfo{
+				Type:     media.TypeImage,
+				FilePath: filePath,
+				FileName: item.ChatItem.File.FileName,
+				FileSize: item.ChatItem.File.FileSize,
+			}
+			mediaTag := media.BuildMediaTags([]media.MediaInfo{mi})
+			if text != "" {
+				text = mediaTag + "\n\n" + text
+			} else {
+				text = mediaTag
+			}
+			mediaPaths = append(mediaPaths, filePath)
+
+		default:
+			// Generic file — just note it.
+			if text == "" {
+				text = fmt.Sprintf("[File: %s]", item.ChatItem.File.FileName)
+			}
+			mediaPaths = append(mediaPaths, filePath)
+		}
+	} else if text == "" {
+		// No file and no text — nothing to deliver.
+		text = "[voice message — download failed]"
+	}
+
+	metadata := map[string]string{
+		"user_name":  senderName,
+		"message_id": item.ChatItem.Meta.ItemID.String(),
+		"group_name": item.ChatInfo.GroupInfo.LocalDisplayName,
+	}
+
+	slog.Debug("simplex: finalized file message",
+		"sender_id", senderID,
+		"group_id", groupID,
+		"msg_type", msgType,
+		"has_file", filePath != "",
+		"preview", channels.Truncate(text, 80),
+	)
+
+	c.HandleMessage(senderID, groupID, text, mediaPaths, metadata, "group")
 }
 
 // extractSender resolves the sender ID and display name from a chat item.
@@ -506,4 +897,40 @@ func (c *Channel) IsGroupAllowed(groupID string) bool {
 		}
 	}
 	return ok
+}
+
+// mimeFromPath guesses a MIME type from a file extension.
+func mimeFromPath(p string) string {
+	switch strings.ToLower(filepath.Ext(p)) {
+	case ".m4a", ".aac":
+		return "audio/aac"
+	case ".ogg", ".opus":
+		return "audio/ogg"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".wav":
+		return "audio/wav"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".mp4":
+		return "video/mp4"
+	case ".pdf":
+		return "application/pdf"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// truncatePreview returns s truncated to maxLen with "..." suffix if needed.
+func truncatePreview(s string, maxLen int) string {
+	if len(s) > maxLen {
+		return s[:maxLen] + "..."
+	}
+	return s
 }
