@@ -116,8 +116,10 @@ func (t *TtsTool) Execute(ctx context.Context, args map[string]any) *Result {
 	}
 
 	// Return MEDIA: path (matching TS pattern)
+	// Emit [[audio_as_voice]] for channels that support native voice bubbles.
+	// The downstream channel handles format conversion (e.g. WAV→m4a for SimpleX).
 	voiceTag := ""
-	if channel == "telegram" && result.Extension == "ogg" {
+	if channel == "telegram" || channel == "simplex" {
 		voiceTag = "[[audio_as_voice]]\n"
 	}
 

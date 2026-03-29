@@ -229,7 +229,7 @@ func (c *Channel) sendVoice(chatID, audioPath, caption string) error {
 		return fmt.Errorf("send simplex voice: %w", err)
 	}
 
-	slog.Info("simplex: voice note sent", "chat_id", chatID, "path", finalPath)
+	slog.Debug("simplex: voice note sent", "chat_id", chatID, "path", finalPath)
 	return nil
 }
 
@@ -513,7 +513,7 @@ func (c *Channel) handleRawMessage(raw []byte) {
 		return
 	}
 
-	slog.Info("simplex: ws event", "type", resp.Type)
+	slog.Debug("simplex: ws event", "type", resp.Type)
 
 	switch resp.Type {
 	case "newChatItems":
@@ -586,7 +586,7 @@ func (c *Channel) handleChatItem(item simplexChatItem) {
 	}
 
 	hasFile := item.ChatItem.File != nil
-	slog.Info("simplex: chat item received",
+	slog.Debug("simplex: chat item received",
 		"msg_type", msgType,
 		"has_file", hasFile,
 		"dir_type", dirType,
@@ -602,7 +602,7 @@ func (c *Channel) handleChatItem(item simplexChatItem) {
 			slog.Warn("simplex: freceive failed", "file_id", fileID, "error", err)
 			// Fall through to handle as text-only message.
 		} else {
-			slog.Info("simplex: requested file download",
+			slog.Debug("simplex: requested file download",
 				"file_id", fileID,
 				"msg_type", msgType,
 				"file_name", item.ChatItem.File.FileName,
@@ -712,7 +712,7 @@ func (c *Channel) handleRcvFileComplete(raw json.RawMessage) {
 		filePath = strings.TrimSpace(wrapper.ChatItem.File.FileSource.FilePath)
 	}
 
-	slog.Info("simplex: file download complete", "file_id", fileID, "path", filePath)
+	slog.Debug("simplex: file download complete", "file_id", fileID, "path", filePath)
 
 	// Look up the pending file.
 	c.pendingMu.Lock()
@@ -778,7 +778,7 @@ func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
 		case "voice", "audio":
 			// Transcribe via STT if configured.
 			transcript := ""
-			slog.Info("simplex: voice file received, attempting STT",
+			slog.Debug("simplex: voice file received, attempting STT",
 				"stt_proxy_url", c.config.STTProxyURL,
 				"path", filePath,
 			)
@@ -792,7 +792,7 @@ func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
 				if err != nil {
 					slog.Warn("simplex: STT transcription failed", "error", err, "path", filePath)
 				} else if transcript != "" {
-					slog.Info("simplex: voice transcribed",
+					slog.Debug("simplex: voice transcribed",
 						"length", len(transcript),
 						"preview", truncatePreview(transcript, 80),
 					)

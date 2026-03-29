@@ -468,7 +468,7 @@ type SessionsConfig struct {
 // TtsConfig configures text-to-speech.
 // Matching TS src/config/types.tts.ts.
 type TtsConfig struct {
-	Provider   string              `json:"provider,omitempty"`   // "openai", "elevenlabs", "edge", "minimax"
+	Provider   string              `json:"provider,omitempty"`   // "openai", "elevenlabs", "edge", "minimax", "kitten"
 	Auto       string              `json:"auto,omitempty"`       // "off" (default), "always", "inbound", "tagged"
 	Mode       string              `json:"mode,omitempty"`       // "final" (default), "all"
 	MaxLength  int                 `json:"max_length,omitempty"` // max text length before truncation (default 1500)
@@ -477,6 +477,7 @@ type TtsConfig struct {
 	ElevenLabs TtsElevenLabsConfig `json:"elevenlabs"`
 	Edge       TtsEdgeConfig       `json:"edge"`
 	MiniMax    TtsMiniMaxConfig    `json:"minimax"`
+	Kitten     TtsKittenConfig     `json:"kitten"`
 }
 
 // TtsOpenAIConfig configures the OpenAI TTS provider.
@@ -509,6 +510,14 @@ type TtsMiniMaxConfig struct {
 	APIBase string `json:"api_base,omitempty"` // default "https://api.minimax.io/v1"
 	Model   string `json:"model,omitempty"`    // default "speech-02-hd"
 	VoiceID string `json:"voice_id,omitempty"` // default "Wise_Woman"
+}
+
+// TtsKittenConfig configures the kitten-tts provider (local, CPU-only).
+// Requires kitten-tts.sh wrapper with a uv-managed virtualenv.
+type TtsKittenConfig struct {
+	WrapperPath string `json:"wrapper_path,omitempty"` // path to kitten-tts.sh (required)
+	Voice       string `json:"voice,omitempty"`        // default "Rosie"
+	Speed       string `json:"speed,omitempty"`        // default "1.5"
 }
 
 // MergeChannelGroupQuotas merges per-group quota overrides from channel configs

@@ -267,6 +267,16 @@ func setupTTS(cfg *config.Config) *tts.Manager {
 		}))
 	}
 
+	// Kitten TTS is local/CPU-only — register if wrapper path is configured.
+	if path := ttsCfg.Kitten.WrapperPath; path != "" {
+		mgr.RegisterProvider(tts.NewKittenProvider(tts.KittenConfig{
+			WrapperPath: path,
+			Voice:       ttsCfg.Kitten.Voice,
+			Speed:       ttsCfg.Kitten.Speed,
+			TimeoutMs:   ttsCfg.TimeoutMs,
+		}))
+	}
+
 	if !mgr.HasProviders() {
 		return nil
 	}
