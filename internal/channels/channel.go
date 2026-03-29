@@ -40,9 +40,9 @@ type DMPolicy string
 
 const (
 	DMPolicyPairing   DMPolicy = "pairing"   // Require pairing code
-	DMPolicyAllowlist DMPolicy = "allowlist"  // Only whitelisted senders
-	DMPolicyOpen      DMPolicy = "open"       // Accept all
-	DMPolicyDisabled  DMPolicy = "disabled"   // Reject all DMs
+	DMPolicyAllowlist DMPolicy = "allowlist" // Only whitelisted senders
+	DMPolicyOpen      DMPolicy = "open"      // Accept all
+	DMPolicyDisabled  DMPolicy = "disabled"  // Reject all DMs
 )
 
 // GroupPolicy controls how group messages are handled.
@@ -50,8 +50,8 @@ type GroupPolicy string
 
 const (
 	GroupPolicyOpen      GroupPolicy = "open"      // Accept all groups
-	GroupPolicyAllowlist GroupPolicy = "allowlist"  // Only whitelisted groups
-	GroupPolicyDisabled  GroupPolicy = "disabled"   // No group messages
+	GroupPolicyAllowlist GroupPolicy = "allowlist" // Only whitelisted groups
+	GroupPolicyDisabled  GroupPolicy = "disabled"  // No group messages
 )
 
 // Channel type constants used across channel packages and gateway wiring.
@@ -63,6 +63,7 @@ const (
 	TypeWhatsApp     = "whatsapp"
 	TypeZaloOA       = "zalo_oa"
 	TypeZaloPersonal = "zalo_personal"
+	TypeSimpleX      = "simplex"
 )
 
 // Channel defines the interface that all channel implementations must satisfy.
@@ -157,8 +158,8 @@ type BaseChannel struct {
 	bus              *bus.MessageBus
 	running          bool
 	allowList        []string
-	agentID          string                 // for DB instances: routes to specific agent (empty = use resolveAgentRoute)
-	tenantID         uuid.UUID              // for DB instances: tenant scope (zero = master tenant fallback)
+	agentID          string                  // for DB instances: routes to specific agent (empty = use resolveAgentRoute)
+	tenantID         uuid.UUID               // for DB instances: tenant scope (zero = master tenant fallback)
 	contactCollector *store.ContactCollector // optional: auto-collect contacts from channel messages
 }
 
