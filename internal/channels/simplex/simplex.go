@@ -59,6 +59,13 @@ func New(cfg config.SimpleXConfig, msgBus *bus.MessageBus) (*Channel, error) {
 		return nil, fmt.Errorf("simplex websocket_url is required")
 	}
 
+	slog.Info("simplex: channel config loaded",
+		"websocket_url", cfg.WebSocketURL,
+		"stt_proxy_url", cfg.STTProxyURL,
+		"stt_timeout", cfg.STTTimeoutSeconds,
+		"group_policy", cfg.GroupPolicy,
+	)
+
 	base := channels.NewBaseChannel(channels.TypeSimpleX, msgBus, cfg.AllowFrom)
 	base.ValidatePolicy("disabled", cfg.GroupPolicy) // DMs disabled in V1
 
@@ -771,6 +778,10 @@ func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
 		case "voice", "audio":
 			// Transcribe via STT if configured.
 			transcript := ""
+			slog.Info("simplex: voice file received, attempting STT",
+				"stt_proxy_url", c.config.STTProxyURL,
+				"path", filePath,
+			)
 			if c.config.STTProxyURL != "" {
 				var err error
 				transcript, err = media.TranscribeAudio(c.ctx, media.STTConfig{
