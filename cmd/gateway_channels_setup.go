@@ -99,7 +99,7 @@ func registerConfigChannels(cfg *config.Config, channelMgr *channels.Manager, ms
 		}
 	}
 
-	if cfg.Channels.SimpleX.Enabled && cfg.Channels.SimpleX.WebSocketURL != "" && instanceLoader == nil {
+	if cfg.Channels.SimpleX.Enabled && cfg.Channels.SimpleX.WebSocketURL != "" {
 		sx, err := simplex.New(cfg.Channels.SimpleX, msgBus)
 		if err != nil {
 			slog.Error("failed to initialize simplex channel", "error", err)
