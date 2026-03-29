@@ -520,6 +520,26 @@ type TtsKittenConfig struct {
 	Speed       string `json:"speed,omitempty"`        // default "1.5"
 }
 
+// DiemConfig configures the Venice DIEM budget router.
+// The admin key is loaded from env GOCLAW_VENICE_ADMIN_KEY only (never from JSON).
+type DiemConfig struct {
+	Enabled       bool       `json:"enabled,omitempty"`        // enable DIEM routing (default false)
+	AdminKey      string     `json:"-"`                        // from env GOCLAW_VENICE_ADMIN_KEY only
+	APIBase       string     `json:"api_base,omitempty"`       // Venice API base (default "https://api.venice.ai/api/v1")
+	ProviderName  string     `json:"provider_name,omitempty"`  // Venice provider name in registry (default "venice")
+	FallbackName  string     `json:"fallback_name,omitempty"`  // Fallback provider name (default "ollama-cloud")
+	FallbackModel string     `json:"fallback_model,omitempty"` // Fallback model (default "qwen3.5:397b-cloud")
+	CacheTTLSecs  int        `json:"cache_ttl_secs,omitempty"` // Balance cache TTL in seconds (default 600 = 10 min)
+	MaxRetries    int        `json:"max_retries,omitempty"`    // Max Venice 503 retry attempts (default 2)
+	Tiers         []DiemTier `json:"tiers,omitempty"`          // Tier table (default: 4-tier Victoria table)
+}
+
+// DiemTier maps a DIEM spend range upper bound to a model name.
+type DiemTier struct {
+	MaxPercent float64 `json:"max_percent"` // upper bound (inclusive) of spend percentage
+	Model      string  `json:"model"`       // model name without "venice/" prefix
+}
+
 // MergeChannelGroupQuotas merges per-group quota overrides from channel configs
 // (e.g., channels.telegram.groups[chatID].quota) into gateway.quota.groups.
 // This allows per-group quotas to be set at the channel level and picked up

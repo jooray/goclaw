@@ -64,6 +64,12 @@ func (p *OpenAIProvider) WithProviderType(pt string) *OpenAIProvider {
 	return p
 }
 
+// WithRetryConfig sets a custom retry configuration (e.g., fewer attempts for budget-sensitive providers).
+func (p *OpenAIProvider) WithRetryConfig(cfg RetryConfig) *OpenAIProvider {
+	p.retryConfig = cfg
+	return p
+}
+
 // resolveModel returns the model ID to use for a request.
 // For OpenRouter, model IDs require a provider prefix (e.g. "anthropic/claude-sonnet-4-5-20250929").
 // If the caller passes an unprefixed model, fall back to the provider's default.

@@ -144,6 +144,10 @@ func runGateway() {
 		registerProvidersFromDB(providerRegistry, pgStores.Providers, pgStores.ConfigSecrets, dbGatewayAddr, cfg.Gateway.Token, pgStores.MCP, cfg)
 	}
 
+	// Wrap Venice provider with DIEM budget router (if enabled).
+	// Must run after registerProvidersFromDB so Venice is already in the registry.
+	setupDiemRouter(providerRegistry, cfg)
+
 	// Warn if deprecated session scope settings are configured
 	if cfg.Sessions.Scope != "" && cfg.Sessions.Scope != "per-sender" {
 		slog.Warn("sessions.scope config is deprecated and ignored — fixed to per-sender", "configured", cfg.Sessions.Scope)

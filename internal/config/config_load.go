@@ -131,6 +131,9 @@ func (c *Config) applyEnvOverrides() {
 	envStr("GOCLAW_TTS_MINIMAX_API_KEY", &c.Tts.MiniMax.APIKey)
 	envStr("GOCLAW_TTS_MINIMAX_GROUP_ID", &c.Tts.MiniMax.GroupID)
 
+	// DIEM router secrets
+	envStr("GOCLAW_VENICE_ADMIN_KEY", &c.Diem.AdminKey)
+
 	// Auto-enable channels if credentials are provided via env
 	if c.Channels.Telegram.Token != "" {
 		c.Channels.Telegram.Enabled = true
@@ -270,7 +273,6 @@ func (c *Config) applyEnvOverrides() {
 		c.Tools.Browser.Enabled = true
 	}
 }
-
 
 // Save writes the config to a JSON file.
 func Save(path string, cfg *Config) error {
