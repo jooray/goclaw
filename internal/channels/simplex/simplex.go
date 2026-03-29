@@ -490,7 +490,7 @@ type rcvFileTransferInfo struct {
 func (c *Channel) handleRawMessage(raw []byte) {
 	var frame wsMessage
 	if err := json.Unmarshal(raw, &frame); err != nil {
-		slog.Debug("simplex: invalid JSON frame", "error", err)
+		slog.Warn("simplex: invalid JSON frame", "error", err)
 		return
 	}
 
@@ -502,9 +502,11 @@ func (c *Channel) handleRawMessage(raw []byte) {
 
 	var resp wsResp
 	if err := json.Unmarshal(frame.Resp, &resp); err != nil {
-		slog.Debug("simplex: cannot parse resp", "error", err)
+		slog.Warn("simplex: cannot parse resp", "error", err)
 		return
 	}
+
+	slog.Info("simplex: ws event", "type", resp.Type)
 
 	switch resp.Type {
 	case "newChatItems":
@@ -576,8 +578,16 @@ func (c *Channel) handleChatItem(item simplexChatItem) {
 		msgType = item.ChatItem.Content.MsgContent.Type
 	}
 
+	hasFile := item.ChatItem.File != nil
+	slog.Info("simplex: chat item received",
+		"msg_type", msgType,
+		"has_file", hasFile,
+		"dir_type", dirType,
+		"sender", senderName,
+	)
+
 	// If this message has a file attachment, check if we need to wait for download.
-	if item.ChatItem.File != nil && (msgType == "voice" || msgType == "audio" || msgType == "image" || msgType == "file" || msgType == "video") {
+	if hasFile && (msgType == "voice" || msgType == "audio" || msgType == "image" || msgType == "file" || msgType == "video") {
 		fileID := item.ChatItem.File.FileID.String()
 
 		// Request file download.
@@ -585,7 +595,7 @@ func (c *Channel) handleChatItem(item simplexChatItem) {
 			slog.Warn("simplex: freceive failed", "file_id", fileID, "error", err)
 			// Fall through to handle as text-only message.
 		} else {
-			slog.Debug("simplex: requested file download",
+			slog.Info("simplex: requested file download",
 				"file_id", fileID,
 				"msg_type", msgType,
 				"file_name", item.ChatItem.File.FileName,
@@ -695,7 +705,7 @@ func (c *Channel) handleRcvFileComplete(raw json.RawMessage) {
 		filePath = strings.TrimSpace(wrapper.ChatItem.File.FileSource.FilePath)
 	}
 
-	slog.Debug("simplex: file download complete", "file_id", fileID, "path", filePath)
+	slog.Info("simplex: file download complete", "file_id", fileID, "path", filePath)
 
 	// Look up the pending file.
 	c.pendingMu.Lock()
