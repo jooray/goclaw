@@ -67,7 +67,17 @@ func (s *PGCronStore) InvalidateCache() {
 // recomputeStaleJobs fixes enabled jobs that have next_run_at = NULL.
 // This happens when the gateway was stopped/crashed while a job was executing,
 // or when the previously computed next_run_at was consumed but never recomputed.
+// Also resets any jobs stuck in 'running' state from a previous crash.
 func (s *PGCronStore) recomputeStaleJobs() {
+	// Reset stale 'running' status — jobs that were mid-execution when the server
+	// crashed will never self-recover, so mark them as interrupted on startup.
+	if res, err := s.db.ExecContext(s.baseCtx,
+		`UPDATE cron_jobs SET last_status = 'interrupted' WHERE last_status = 'running'`); err != nil {
+		slog.Warn("cron: failed to reset stale running jobs on startup", "error", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("cron: reset stale running jobs to interrupted", "count", n)
+	}
+
 	rows, err := s.db.QueryContext(s.baseCtx,
 		`SELECT id, schedule_kind, cron_expression, run_at, timezone, interval_ms
 		 FROM cron_jobs WHERE enabled = true AND next_run_at IS NULL`)

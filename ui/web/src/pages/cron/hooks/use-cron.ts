@@ -21,6 +21,20 @@ export interface CronPayload {
   command?: string;
 }
 
+export interface CronJobPatch {
+  name?: string;
+  agentId?: string;
+  enabled?: boolean;
+  schedule?: CronSchedule;
+  message?: string;
+  deliver?: boolean;
+  deliverChannel?: string;
+  deliverTo?: string;
+  deleteAfterRun?: boolean;
+  wakeHeartbeat?: boolean;
+  stateless?: boolean;
+}
+
 export interface CronJob {
   id: string;
   name: string;
@@ -153,7 +167,7 @@ export function useCron() {
   );
 
   const updateJob = useCallback(
-    async (jobId: string, params: Record<string, unknown>) => {
+    async (jobId: string, params: CronJobPatch) => {
       try {
         await ws.call(Methods.CRON_UPDATE, { jobId, patch: params });
         await invalidate();

@@ -51,7 +51,13 @@ func (s *seedStubStore) SetUserContextFile(_ context.Context, _ uuid.UUID, _, na
 	s.seededUserFiles[name] = content
 	return nil
 }
+func (s *seedStubStore) ListUserContextFilesByName(_ context.Context, _ uuid.UUID, _ string) ([]store.UserContextFileData, error) {
+	return nil, nil
+}
 func (s *seedStubStore) DeleteUserContextFile(_ context.Context, _ uuid.UUID, _, _ string) error {
+	return nil
+}
+func (s *seedStubStore) MigrateUserDataOnMerge(_ context.Context, _ []string, _ string) error {
 	return nil
 }
 
@@ -108,10 +114,6 @@ func (s *seedStubStore) EnsureUserProfile(_ context.Context, _ uuid.UUID, _ stri
 func (s *seedStubStore) PropagateContextFile(_ context.Context, _ uuid.UUID, _ string) (int, error) {
 	return 0, nil
 }
-func (s *seedStubStore) MigrateUserDataOnMerge(_ context.Context, _ []string, _ string) error {
-	return nil
-}
-
 // ---- Tests ----
 
 // TestSeedUserFiles_PredefinedAgent_UsesAgentLevelUserMD is the primary regression test.

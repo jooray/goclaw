@@ -147,6 +147,7 @@
       "traversing": "Đang duyệt...",
       "loading": "Đang tải...",
       "noRelations": "Không tìm thấy quan hệ.",
+      "showAll": "Hiện tất cả",
       "traversalResults": "Kết quả duyệt ({{count}})",
       "direction": {
         "outgoing": "→ đi ra",

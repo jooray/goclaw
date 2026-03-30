@@ -113,6 +113,38 @@ func TestResolveEffectiveChatGPTOAuthRoutingUsesProviderDefaultsWhenAgentUnset(t
 	}
 }
 
+func TestResolveEffectiveChatGPTOAuthRoutingAllowsInheritWithoutSavedProviderPool(t *testing.T) {
+	override := &ChatGPTOAuthRoutingConfig{
+		OverrideMode: ChatGPTOAuthOverrideInherit,
+	}
+
+	got := ResolveEffectiveChatGPTOAuthRouting(nil, override)
+	if got != nil {
+		t.Fatalf("ResolveEffectiveChatGPTOAuthRouting() = %#v, want nil", got)
+	}
+}
+
+func TestResolveEffectiveChatGPTOAuthRoutingInheritForwardsProviderDefaults(t *testing.T) {
+	defaults := &ChatGPTOAuthRoutingConfig{
+		Strategy:           ChatGPTOAuthStrategyRoundRobin,
+		ExtraProviderNames: []string{"codex-work"},
+	}
+	override := &ChatGPTOAuthRoutingConfig{
+		OverrideMode: ChatGPTOAuthOverrideInherit,
+	}
+
+	got := ResolveEffectiveChatGPTOAuthRouting(defaults, override)
+	if got == nil {
+		t.Fatal("ResolveEffectiveChatGPTOAuthRouting() = nil, want config forwarding provider defaults")
+	}
+	if got.Strategy != ChatGPTOAuthStrategyRoundRobin {
+		t.Fatalf("Strategy = %q, want %q", got.Strategy, ChatGPTOAuthStrategyRoundRobin)
+	}
+	if !reflect.DeepEqual(got.ExtraProviderNames, []string{"codex-work"}) {
+		t.Fatalf("ExtraProviderNames = %#v, want provider defaults", got.ExtraProviderNames)
+	}
+}
+
 func TestResolveEffectiveChatGPTOAuthRoutingAllowsCustomSingleAccountToDisableDefaults(t *testing.T) {
 	defaults := &ChatGPTOAuthRoutingConfig{
 		Strategy:           ChatGPTOAuthStrategyRoundRobin,

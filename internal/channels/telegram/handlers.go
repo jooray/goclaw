@@ -226,9 +226,14 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 	}
 
 	// Compute sender label for group context (used in history + current message annotation)
-	senderLabel := user.FirstName
+	displayName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	senderLabel := displayName
 	if user.Username != "" {
-		senderLabel = "@" + user.Username
+		if displayName != "" {
+			senderLabel = "@" + user.Username + " (" + displayName + ")"
+		} else {
+			senderLabel = "@" + user.Username
+		}
 	}
 
 	// --- Group mention gating (matching TS mentionGate logic) ---

@@ -9,13 +9,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfigGroupHeader } from "@/components/shared/config-group-header";
 import { IANA_TIMEZONES } from "@/lib/constants";
-import type { CronJob } from "../hooks/use-cron";
+import type { CronJob, CronJobPatch } from "../hooks/use-cron";
 
 interface CronAdvancedDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: CronJob;
-  onUpdate?: (id: string, params: Record<string, unknown>) => Promise<void>;
+  onUpdate?: (id: string, params: CronJobPatch) => Promise<void>;
 }
 
 function deriveState(job: CronJob) {

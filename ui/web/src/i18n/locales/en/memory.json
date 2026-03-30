@@ -147,6 +147,7 @@
       "traversing": "Traversing...",
       "loading": "Loading...",
       "noRelations": "No relations found.",
+      "showAll": "Show all",
       "traversalResults": "Traversal Results ({{count}})",
       "direction": {
         "outgoing": "→ outgoing",

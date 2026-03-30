@@ -147,6 +147,7 @@
       "traversing": "遍历中...",
       "loading": "加载中...",
       "noRelations": "未找到关系。",
+      "showAll": "显示全部",
       "traversalResults": "遍历结果（{{count}}）",
       "direction": {
         "outgoing": "→ 出向",

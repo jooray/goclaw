@@ -115,13 +115,19 @@ function computeForceLayout(nodes: Node[], edges: Edge[], entities: KGEntity[]):
   }));
   const simLinks = edges.map((e) => ({ source: e.source, target: e.target }));
   const w = 600, h = 400;
+  // Scale forces by node count — tighter for small graphs, spread for large
+  const n = nodes.length;
+  const linkDist = n > 60 ? 200 : n > 30 ? 160 : 120;
+  const chargeMul = n > 60 ? -250 : n > 30 ? -180 : -120;
+  const centerPull = n > 60 ? 0.03 : n > 30 ? 0.05 : 0.08;
+  const collideBase = n > 60 ? 50 : n > 30 ? 40 : 35;
   const simulation = forceSimulation(simNodes)
-    .force("link", forceLink(simLinks).id((d: any) => d.id).distance(220).strength(0.4))
-    .force("charge", forceManyBody().strength((d: any) => -300 * (d.mass ?? 1)))
+    .force("link", forceLink(simLinks).id((d: any) => d.id).distance(linkDist).strength(0.5))
+    .force("charge", forceManyBody().strength((d: any) => chargeMul * (d.mass ?? 1)))
     .force("center", forceCenter(w / 2, h / 2))
-    .force("x", forceX(w / 2).strength(0.03))
-    .force("y", forceY(h / 2).strength(0.03))
-    .force("collide", forceCollide().radius((d: any) => 55 + (d.mass ?? 1) * 5).strength(0.8))
+    .force("x", forceX(w / 2).strength(centerPull))
+    .force("y", forceY(h / 2).strength(centerPull))
+    .force("collide", forceCollide().radius((d: any) => collideBase + (d.mass ?? 1) * 3).strength(0.7))
     .stop();
   const ticks = Math.ceil(Math.log(simulation.alphaMin()) / Math.log(1 - simulation.alphaDecay()));
   for (let i = 0; i < ticks; i++) simulation.tick();
@@ -155,7 +161,12 @@ function KGGraphViewInner({ entities: allEntities, relations: allRelations, onEn
   // Limit entities to GRAPH_LIMIT, filter relations accordingly
   const totalCount = allEntities.length;
   const isLimited = totalCount > GRAPH_LIMIT;
-  const entities = useMemo(() => isLimited ? allEntities.slice(0, GRAPH_LIMIT) : allEntities, [allEntities, isLimited]);
+  // Rank by degree centrality — hub nodes (most connections) always included in graph
+  const entities = useMemo(() => {
+    if (!isLimited) return allEntities;
+    const deg = computeDegreeMap(allEntities, allRelations);
+    return [...allEntities].sort((a, b) => (deg.get(b.id) ?? 0) - (deg.get(a.id) ?? 0)).slice(0, GRAPH_LIMIT);
+  }, [allEntities, allRelations, isLimited]);
   const entityIds = useMemo(() => new Set(entities.map((e) => e.id)), [entities]);
   const relations = useMemo(
     () => allRelations.filter((r) => entityIds.has(r.source_entity_id) && entityIds.has(r.target_entity_id)),
@@ -238,8 +249,9 @@ function KGGraphViewInner({ entities: allEntities, relations: allRelations, onEn
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     startTransition(() => setSelectedNodeId((prev) => (prev === node.id ? null : node.id)));
+    // Defer dialog open to next frame — decouples edge restyle from dialog mount cost
     const entity = entityMap.get(node.id);
-    if (entity && onEntityClick) onEntityClick(entity);
+    if (entity && onEntityClick) setTimeout(() => onEntityClick(entity), 0);
   }, [entityMap, onEntityClick, startTransition]);
 
   const handlePaneClick = useCallback(() => {

@@ -28,6 +28,16 @@ type OpenAIProvider struct {
 	retryConfig  RetryConfig
 }
 
+// isOpenAINativeEndpoint returns true for endpoints confirmed to be native OpenAI
+// infrastructure that accepts the "developer" message role.
+// Azure OpenAI, proxies, and other OpenAI-compatible backends only support "system".
+// Matching OpenClaw TS: model-compat.ts → isOpenAINativeEndpoint().
+func isOpenAINativeEndpoint(apiBase string) bool {
+	// Extract hostname from the API base URL.
+	lower := strings.ToLower(apiBase)
+	return strings.Contains(lower, "api.openai.com")
+}
+
 func NewOpenAIProvider(name, apiKey, apiBase, defaultModel string) *OpenAIProvider {
 	if apiBase == "" {
 		apiBase = "https://api.openai.com/v1"
@@ -275,14 +285,26 @@ func (p *OpenAIProvider) buildRequestBody(model string, req ChatRequest, stream 
 		inputMessages = collapseToolCallsWithoutSig(inputMessages)
 	}
 
+	// Detect native OpenAI endpoint to enable developer role.
+	// GPT-4o+ models prioritize "developer" messages over "system" for instruction
+	// adherence. Non-OpenAI backends (proxies, Qwen, DeepSeek, etc.) reject "developer".
+	// Matching OpenClaw TS: model-compat.ts → isOpenAINativeEndpoint().
+	useDevRole := isOpenAINativeEndpoint(p.apiBase)
+
 	// Convert messages to proper OpenAI wire format.
 	// This is necessary because our internal Message/ToolCall structs don't match
 	// the OpenAI API format (tool_calls need type+function wrapper, arguments as JSON string).
 	// Also omits empty content on assistant messages with tool_calls (Gemini compatibility).
 	msgs := make([]map[string]any, 0, len(inputMessages))
 	for _, m := range inputMessages {
+		role := m.Role
+		// Map "system" → "developer" for native OpenAI endpoints (GPT-4o+).
+		// The developer role has higher instruction priority than system role.
+		if useDevRole && role == "system" {
+			role = "developer"
+		}
 		msg := map[string]any{
-			"role": m.Role,
+			"role": role,
 		}
 
 		// Echo reasoning_content for assistant messages (required by Kimi, DeepSeek when thinking is enabled)
