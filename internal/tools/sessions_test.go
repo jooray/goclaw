@@ -170,7 +170,10 @@ func agentCtx(agentID string) context.Context {
 	if err != nil {
 		return ctx
 	}
-	return store.WithAgentID(ctx, uid)
+	ctx = store.WithAgentID(ctx, uid)
+	// Session keys use agent_key, not UUID.  In production WithToolAgentKey
+	// is set by the agent loop; tests must mirror this.
+	return WithToolAgentKey(ctx, agentID)
 }
 
 func agentCtxWithSandbox(agentID, sandboxKey string) context.Context {
