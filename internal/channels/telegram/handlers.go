@@ -482,7 +482,7 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 				}
 				if len(histMedia) > 0 {
 					histTags := buildMediaTags(histMedia)
-					annotated = histTags + "\n\n" + annotated
+					annotated = "[Media from recent group messages — only analyze if user asks about them]\n" + histTags + "\n[/Media]\n\n" + annotated
 				}
 				for _, e := range histErrors {
 					slog.Warn("telegram: history media download failed",
@@ -603,6 +603,7 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 		AgentID:      targetAgentID,
 		HistoryLimit: c.historyLimit,
 		ToolAllow:    topicCfg.tools,
+		TenantID:     c.TenantID(),
 		Metadata:     metadata,
 	})
 
@@ -611,4 +612,3 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 		c.groupHistory.Clear(localKey)
 	}
 }
-

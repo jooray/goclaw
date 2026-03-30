@@ -57,7 +57,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
       await onUpdate(job.id, {
         schedule,
         message: message.trim(),
-        agentId: agentId.trim() || undefined,
+        agentId: agentId.trim() || "",
         enabled,
       });
       setEditingMessage(false);
@@ -176,7 +176,7 @@ export function CronOverviewTab({ job, onUpdate }: CronOverviewTabProps) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>{t("create.agentId")}</Label>
-            <Select value={agentId || "__default__"} onValueChange={(v) => setAgentId(v === "__default__" ? "" : v)} disabled={readonly}>
+            <Select name="agentId" value={agentId || "__default__"} onValueChange={(v) => setAgentId(v === "__default__" ? "" : v)} disabled={readonly}>
               <SelectTrigger className="text-base md:text-sm">
                 <SelectValue placeholder={t("create.agentIdPlaceholder")} />
               </SelectTrigger>

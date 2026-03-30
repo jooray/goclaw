@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
@@ -53,6 +54,18 @@ func (m *AgentsMethods) handleDelete(ctx context.Context, client *gateway.Client
 
 		m.agents.InvalidateAgent(params.AgentID)
 		m.agents.Remove(params.AgentID)
+
+		// Emit agent:deleted event for async cleanup (e.g. orphaned provider removal)
+		if m.eventBus != nil {
+			m.eventBus.Broadcast(bus.Event{
+				Name: bus.TopicAgentDeleted,
+				Payload: bus.AgentDeletedPayload{
+					AgentKey: params.AgentID,
+					Provider: ag.Provider,
+					TenantID: store.TenantIDFromContext(ctx),
+				},
+			})
+		}
 
 		// Best-effort delete workspace
 		if params.DeleteFiles && ag.Workspace != "" {
