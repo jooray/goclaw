@@ -770,8 +770,8 @@ func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
 	var mediaPaths []string
 
 	if filePath != "" {
-		switch msgType {
-		case "voice", "audio":
+		switch {
+		case msgType == "voice", msgType == "audio", msgType == "file" && isAudioPath(filePath):
 			// Transcribe via STT if configured.
 			transcript := ""
 			slog.Debug("simplex: voice file received, attempting STT",
@@ -796,8 +796,12 @@ func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
 			}
 
 			// Build media tag.
+			mediaType := msgType
+			if mediaType == "file" {
+				mediaType = media.TypeAudio
+			}
 			mi := media.MediaInfo{
-				Type:       msgType,
+				Type:       mediaType,
 				FilePath:   filePath,
 				FileName:   item.ChatItem.File.FileName,
 				FileSize:   item.ChatItem.File.FileSize,
@@ -813,7 +817,7 @@ func (c *Channel) finalizePendingFile(pf *pendingFile, filePath string) {
 
 			mediaPaths = append(mediaPaths, filePath)
 
-		case "image":
+		case msgType == "image":
 			mi := media.MediaInfo{
 				Type:     media.TypeImage,
 				FilePath: filePath,
@@ -942,6 +946,10 @@ func mimeFromPath(p string) string {
 	default:
 		return "application/octet-stream"
 	}
+}
+
+func isAudioPath(p string) bool {
+	return strings.HasPrefix(mimeFromPath(p), "audio/")
 }
 
 // truncatePreview returns s truncated to maxLen with "..." suffix if needed.
