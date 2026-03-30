@@ -148,10 +148,6 @@ func (c *Channel) Send(_ context.Context, msg bus.OutboundMessage) error {
 				if err := c.sendVoice(msg.ChatID, att.URL, msg.Content); err != nil {
 					slog.Warn("simplex: voice send failed, falling back to text", "error", err)
 				} else {
-					// Voice sent successfully; send any remaining text.
-					if msg.Content != "" {
-						return c.sendTextChunked(msg.ChatID, msg.Content)
-					}
 					return nil
 				}
 			}
