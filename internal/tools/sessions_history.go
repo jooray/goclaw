@@ -70,12 +70,13 @@ func (t *SessionsHistoryTool) Execute(ctx context.Context, args map[string]any) 
 
 	includeTools, _ := args["include_tools"].(bool)
 
-	// Security: validate session belongs to current agent (fail-closed)
-	agentID := resolveAgentIDString(ctx)
-	if agentID == "" {
+	// Security: validate session belongs to current agent (fail-closed).
+	// Session keys use agent_key (e.g. "agent:victoria:..."), not UUID.
+	agentKey := ToolAgentKeyFromCtx(ctx)
+	if agentKey == "" {
 		return ErrorResult("agent context required")
 	}
-	if !strings.HasPrefix(sessionKey, "agent:"+agentID+":") {
+	if !strings.HasPrefix(sessionKey, "agent:"+agentKey+":") {
 		return ErrorResult("access denied: session belongs to a different agent")
 	}
 

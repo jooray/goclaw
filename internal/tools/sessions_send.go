@@ -69,15 +69,16 @@ func (t *SessionsSendTool) Execute(ctx context.Context, args map[string]any) *Re
 		return ErrorResult("either session_key or label is required")
 	}
 
-	// Security: fail-closed when agentID missing
-	agentID := resolveAgentIDString(ctx)
-	if agentID == "" {
+	// Security: fail-closed when agent key missing.
+	// Session keys use agent_key (e.g. "agent:victoria:..."), not UUID.
+	agentKey := ToolAgentKeyFromCtx(ctx)
+	if agentKey == "" {
 		return ErrorResult("agent context required")
 	}
 
 	// Resolve by label if needed
 	if sessionKey == "" && label != "" {
-		sessions := t.sessions.List(ctx, agentID)
+		sessions := t.sessions.List(ctx, agentKey)
 		for _, s := range sessions {
 			if s.Label == label {
 				sessionKey = s.Key
@@ -90,7 +91,7 @@ func (t *SessionsSendTool) Execute(ctx context.Context, args map[string]any) *Re
 	}
 
 	// Security: validate target session belongs to same agent
-	if !strings.HasPrefix(sessionKey, "agent:"+agentID+":") {
+	if !strings.HasPrefix(sessionKey, "agent:"+agentKey+":") {
 		return ErrorResult("access denied: target session belongs to a different agent")
 	}
 
